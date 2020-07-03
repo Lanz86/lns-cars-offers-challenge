@@ -1,6 +1,7 @@
 <?php
 
 use \Aws\DynamoDb\Marshaler;
+use Illuminate\Http\Request;
 
 namespace App\Services;
 
@@ -14,14 +15,36 @@ class OrdersDynamoDBJsonFileService implements OrdersServicesInterface
         $this->items = $this->loadAndNormalizeItems();
     }
 
-    public function getAllVisibleItems()
+    private function getArrayPathByDotNotation($array, $path, $separator)
     {
-        $visibleItems = array_filter($this->items, function($item) {
-            return $item['visible'] == true;
+        $keys = explode($separator, $path);
+
+        foreach ($keys as $key) {
+            $array = $array[$key];
+        }
+
+        return $array;
+    }
+
+    public function getAllVisibleItems(\Illuminate\Http\Request $request)
+    {
+
+        $orderBy = "pricing.price";
+
+        $minPriceFilter = $request->query('minPrice');
+        $maxPriceFilter = $request->query('maxPrice');
+
+
+        $visibleItems = array_filter($this->items, function($item)  use($minPriceFilter, $maxPriceFilter) {
+            return $item['visible'] == true &&
+                    (
+                      ($minPriceFilter == null || $minPriceFilter <= $item['pricing']['price']) &&
+                      ($maxPriceFilter == null || $maxPriceFilter <= $item['pricing']['price'])
+                    );
         });
 
-        usort($visibleItems, function($item1, $item2) {
-            return $item1['pricing']['price'] - $item2['pricing']['price'];
+        usort($visibleItems, function($item1, $item2) use ($orderBy) {
+            return $this->getArrayPathByDotNotation($item1, $orderBy, '.') - $this->getArrayPathByDotNotation($item2, $orderBy, '.');
         });
 
         return $visibleItems;
