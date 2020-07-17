@@ -34,30 +34,30 @@ class OrdersDynamoDBJsonFileService implements OrdersServicesInterface
         $minPriceFilter = $request->query('minPrice');
         $maxPriceFilter = $request->query('maxPrice');
 
+        $retValue = $this->items->filter(function($value, $key) use($minPriceFilter, $maxPriceFilter)  {
 
-        $visibleItems = array_filter($this->items, function($item)  use($minPriceFilter, $maxPriceFilter) {
-            return $item['visible'] == true &&
-                    (
-                      ($minPriceFilter == null || $minPriceFilter <= $item['pricing']['price']) &&
-                      ($maxPriceFilter == null || $maxPriceFilter <= $item['pricing']['price'])
-                    );
+            return $value['visible'] == true &&
+            (
+              ($minPriceFilter == null || $minPriceFilter <= $value['pricing']['price']) &&
+              ($maxPriceFilter == null || $maxPriceFilter <= $value['pricing']['price'])
+            );
         });
 
-        usort($visibleItems, function($item1, $item2) use ($orderBy) {
-            return $this->getArrayPathByDotNotation($item1, $orderBy, '.') - $this->getArrayPathByDotNotation($item2, $orderBy, '.');
+        $retValue->sortBy(function($item, $key) use ($orderBy) {
+            return  $this->getArrayPathByDotNotation($item, $orderBy, '.');
         });
 
-        return $visibleItems;
+        return $retValue;
     }
 
 
     public function getItemById($id)
     {
-        $item = array_filter($this->items, function($item) use($id) {
-            return $item['id'] == $id;
+        $item = $this->items->first(function($value, $key) use($id) {
+            return $value['id'] == $id;
         });
 
-        return empty($item) ? null : $item[0];
+        return $item;
     }
 
     private function loadAndNormalizeItems()
@@ -70,12 +70,13 @@ class OrdersDynamoDBJsonFileService implements OrdersServicesInterface
 
             $decodedFile = json_decode(utf8_encode($fileContent), true);
 
-            foreach ($decodedFile["Items"] as $itemKey => $item) {
-                foreach ($item as $valueItemKey => $value) {
-                    $values[$valueItemKey]= $marshaler->unmarshalValue($value);
-                }
-                $items[] = $values;
-            }
+            $collection = collect($decodedFile["Items"]);
+
+            $items = $collection->map(function($item, $key) use($marshaler) {
+                return collect($item)->map(function($value, $keyValue) use($marshaler) {
+                    return $marshaler->unmarshalValue($value);
+                });
+            });
 
             return $items;
         }
